@@ -146,24 +146,40 @@ public class DefaultAccountStateHandler implements AccountStateHandler {
             return;
         }
 
-        final Calendar expDate = warning.getExpiration();
-        final Days ttl = Days.daysBetween(Instant.now(), new Instant(expDate));
-        logger.debug(
-                "Password expires in {} days. Expiration warning threshold is {} days.",
-                ttl.getDays(),
-                configuration.getPasswordWarningNumberOfDays());
-        if (configuration.isAlwaysDisplayPasswordExpirationWarning()
-                || ttl.getDays() < configuration.getPasswordWarningNumberOfDays()) {
-            messages.add(new PasswordExpiringWarningMessage(
-                    "Password expires in {0} days. Please change your password at <href=\"{1}\">{1}</a>",
-                    ttl.getDays(),
-                    configuration.getPasswordPolicyUrl()));
+        if (configuration.getPasswordWarningNumberOfDays() > -1 /* afolgado: If passwordWarningNumberOfDays is configured to -1, warnings will not be shown */ 
+        		&& warning.getLoginsRemaining() == 0 /* afolgado: When loginsRemaining > 0, password is already expired, so expiration messages like "your password expires in 0 days" would be confusing */) { 
+            final Calendar expDate = warning.getExpiration();
+            final Days ttl = Days.daysBetween(Instant.now(), new Instant(expDate));
+	        if (ttl != null ) {
+	        	logger.debug("Password expires in {} days", ttl.getDays());
+		        if (ttl.getDays() == 0) {
+		            messages.add(new Message(
+		            		"password.expiration.today",
+		                    "Your password expires today. Please change your password at <href=\"{0}\">{0}</a>",
+		                    configuration.getPasswordPolicyUrl()));
+		        } else if (ttl.getDays() < configuration.getPasswordWarningNumberOfDays() 
+		        		|| configuration.getPasswordWarningNumberOfDays() == 0) {
+		        	/* afolgado: passwordWarningNumberOfDays can be configured to 0 to show the warning only when the server throws it
+		        	 * In ppolicy it can be configured with the pwdExpireWarning attribute */
+		            messages.add(new PasswordExpiringWarningMessage(
+		                    "Password expires in {0} day(s). Please change your password at <href=\"{1}\">{1}</a>",
+		                    ttl.getDays(),
+		                    configuration.getPasswordPolicyUrl()));
+		        }
+	        } else {
+	        	logger.debug("Password TTL not defined");
+	        }
         }
         if (warning.getLoginsRemaining() > 0) {
+			logger.debug("Password expired, {}(-1) grace logins remaining", warning.getLoginsRemaining());
             messages.add(new Message(
                     "password.expiration.loginsRemaining",
-                    "You have {0} logins remaining before you MUST change your password.",
-                    warning.getLoginsRemaining()));
+                    "Your password has expired. You have {0} logins remaining before you MUST change your password." + 
+                    		" Please change your password at <href=\"{1}\">{1}</a>",
+                    /* afolgado: The correction getLoginsRemaining() -1 is needed to show "You have 0 logins remaining...". 
+                     * Otherwise the account would lock the time after "You have 1 logins remaining..." warning. */
+                    warning.getLoginsRemaining() - 1,
+                    configuration.getPasswordPolicyUrl()));
 
         }
     }
